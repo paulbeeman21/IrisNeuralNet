@@ -1,0 +1,301 @@
+---
+title: "hw4.401"
+author: "Paul Beeman"
+date: "November 17, 2017"
+output:
+  word_document: default
+  html_document: default
+---
+
+###Task 1
+
+Test Data and Scaling:
+```{r}
+# split between training and testing data
+set.seed(1)
+n <- dim(iris)[1]
+rows <- sample(1:n, 0.8*n)
+train <- iris[rows,]
+test <- iris[-rows,]
+
+# scale the data
+iris$Sepal.Length <- iris$Sepal.Length/max(iris$Sepal.Length)
+iris$Sepal.Width <- iris$Sepal.Width/max(iris$Sepal.Width)
+iris$Petal.Length <- iris$Petal.Length/max(iris$Petal.Length)
+iris$Petal.Width <- iris$Petal.Width/max(iris$Petal.Width)
+```
+Parameters:
+$$W^{(1)}= 12\ parameters$$
+$$B^{(1)} = 3\ parameters$$
+$$W^{(2)} = 9\ parameters$$
+$$B^{(2)} = 3\ parameters$$
+
+### Task 2 Turn Outputs into 0s and 1s: 
+
+To express the categories correctly, we need to turn the factor labels in species column into vectors of 0s and 1s. For example, an iris of species _setosa_ should be expressed as `1 0 0`. Write some code that will do this. Hint: you can use `as.integer()` to turn a factor into numbers, and then use a bit of creativity to turn those values into vectors of 1s and 0s.
+
+```{r}
+
+species_number <- as.integer(iris$Species)
+setosa_num <- ifelse(species_number == 1, 1, 0)
+versicolor_num <-ifelse(species_number == 2, 1, 0)
+virginica_num <-ifelse(species_number == 3, 1, 0)
+Species <- iris$Species
+iris <- cbind(iris[,1:4], setosa_num, versicolor_num, virginica_num, Species)
+head(iris)
+
+train <- iris[rows,]
+test <- iris[-rows,]
+
+```
+###Task 3: Forward Propogation Formula
+
+
+
+$$f(t) = \frac{1}{1 + e^{-t}}$$
+
+$$a^{(2)} = f(XW^{(1)}+B^{(1)})$$
+
+
+$$\hat{y} = f(a^{(2)}W^{(2)} + B^{(2)})$$ 
+
+
+
+###Task 4: Forward Propogation as R code
+
+```{r forward propogation}
+#necessary functions
+sigmoid <- function(Z){
+    1/(1 + exp(-Z))
+}
+
+sigmoidprime <- function(z){
+    exp(-z)/((1+exp(-z))^2)
+}
+
+cost <- function(y,y_hat){
+    0.5*sum((y - y_hat)^2)
+}
+
+# define the size our our neural network
+input_layer_size <- 4
+output_layer_size <- 3
+hidden_layer_size <- 3
+
+set.seed(1)
+# set some initial weights
+W_1 <- matrix(runif(input_layer_size * hidden_layer_size)-.5, nrow = input_layer_size, ncol = hidden_layer_size)
+W_2 <- matrix(runif(hidden_layer_size * output_layer_size)-.5, nrow = hidden_layer_size, ncol = output_layer_size)
+
+# biases matrix
+B_1 <- matrix(runif(hidden_layer_size), ncol = 1)
+B_2 <- matrix(runif(output_layer_size), ncol = 1)
+
+#X and Y matrices 
+X <- as.matrix(train[,1:4])
+Y <- as.matrix(train[,5:7])
+
+#Forward Propogation
+Z_2 <- X%*%W_1
+A_2 <- sigmoid(Z_2 + t( B_1 %*% rep(1,120) ) )
+Z_3 <- A_2%*%W_2
+Y_hat <- sigmoid(Z_3 + t( B_2 %*% rep(1,120) ) )
+```
+
+##Back Propogation
+
+###Task 5: Latex formulas for partial derivatives
+
+$$\frac{\partial J }{\partial W^{(2)}} = -(y-\hat{y})\frac{\partial \hat{y} }{\partial W^{(2)}}$$
+$$ = -(y-\hat{y})\frac{\partial \hat{y} }{\partial Z^{(3)}}\frac{\partial Z^{(3)}}{\partial W^{(2)}}$$
+$$ = -(y-\hat{y})\frac{e^{-Z^{(3)}-B^{(2)}}}{(1 + e^{-Z^{(3)}-B^{(2)}})^2}A^{(2)}$$ 
+$$\frac{\partial J }{\partial W^{(1)}} = \delta^{(3)}  \frac{\partial Z^{(3)}}{\partial W^{(1)}} $$
+$$= \delta^{(3)}  \frac{\partial Z^{(3)} }{\partial A^{(2)}}\frac{\partial A^{(2)}}{\partial W^{(1)}}$$
+$$= \delta^{(3)}  W^{(2)}  \frac{Xe^{-XW^{(1)}-B^{(1)}}}{(1 + e^{-XW^{(1)}-B^{(1)}})^2}$$ 
+$$\frac{\partial J }{\partial B^{(1)}} = -(y-\hat{y})\frac{\partial \hat{y} }{\partial B^{(1)}} $$
+$$ = -(y-\hat{y})\frac{\partial \hat{y} }{\partial Z^{(3)}}\frac{\partial Z^{(3)}}{\partial B^{(1)}}$$
+$$= \delta^{(3)}  \frac{\partial Z^{(3)} }{\partial A^{(2)}}\frac{\partial A^{(2)}}{\partial B^{(1)}}$$
+$$= \delta^{(3)} W^{(2)}  \frac{e^{-Z^{(2)}-B^{(1)}}}{(1 + e^{-Z^{(1)}-B^{(1)}})^2}$$
+$$=\delta^{(2)}$$
+$$\frac{\partial J }{\partial B^{(2)}} = -(y-\hat{y})\frac{\partial \hat{y} }{\partial B^{(2)}} $$
+$$ = -(y-\hat{y})\frac{e^{-Z^{(3)}-B^{(2)}}}{(1 + e^{-Z^{(3)}-B^{(2)}})^2}$$  
+$$=\delta^{(3)}$$
+
+###Task 6: R code for partial derivatives 
+
+We can see in the above derivatives that there are some issues with dimensionality if we try and multiply some of our matrices together. Turning our derivatives into R code involves manipulating some of the matrices to make sure our dimensions are suited for matrix multiplication and addition. 
+
+```{r partial derivatives as r code}
+delta_3 <- delta_3 <- ( -(Y - Y_hat) * sigmoidprime(Z_3 + t( B_2 %*% rep(1,120) ) ) )
+djdw2 <- t(A_2) %*% delta_3
+
+delta_2 <- delta_3 %*% t(W_2) * sigmoidprime(Z_2 + t( B_1 %*% rep(1, 120) ) )
+djdw1 <- t(X) %*% delta_2
+
+djdb2 <- rep(1, 120) %*% delta_3
+
+djdb1 <- rep(1, 120) %*% delta_2
+
+#resulting partials
+djdw2
+djdw1
+djdb2
+djdb1
+```
+###Task 7: Numerical Gradient Checking
+```{r numerical gradient checking W1}
+
+
+# set some initial weights
+set.seed(1)
+W_1 <- matrix(runif(input_layer_size * hidden_layer_size)-.5, nrow = input_layer_size, ncol = hidden_layer_size)
+W_2 <- matrix(runif(hidden_layer_size * output_layer_size)-.5, nrow = hidden_layer_size, ncol = output_layer_size)
+B_1 <- matrix(runif(hidden_layer_size), ncol = 1)
+B_2 <- matrix(runif(output_layer_size), ncol = 1)
+
+i = 1
+X <- as.matrix(train[,1:4])
+Y <- as.matrix(train[,5:7])
+
+Z_2 <- X%*%W_1
+A_2 <- sigmoid(Z_2 + t( B_1 %*% rep(1,120) ) )
+Z_3 <- A_2%*%W_2
+Y_hat <- sigmoid(Z_3 + t( B_2 %*% rep(1,120) ) )
+currentcost <- cost(Y,Y_hat)  # Current cost 
+
+e <- 1e-4  # size of perturbation
+
+
+
+# place holder for our numeric gradients
+numgrad_w_1 <- matrix(0, nrow = input_layer_size, ncol = hidden_layer_size)
+elements <- input_layer_size * hidden_layer_size
+
+for(i in 1:elements){  # calculate the numeric gradient for each value in the W matrix
+    set.seed(1)
+    W_1 <- matrix(runif(input_layer_size * hidden_layer_size)-.5, nrow = input_layer_size, ncol = hidden_layer_size)
+    W_2 <- matrix(runif(hidden_layer_size * output_layer_size)-.5, nrow = hidden_layer_size, ncol = output_layer_size)
+    B_1 <- matrix(runif(hidden_layer_size), ncol = 1)
+    B_2 <- matrix(runif(output_layer_size), ncol = 1)
+    
+    W_1[i] <- W_1[i] + e # apply the perturbation
+    
+    Z_2 <- X%*%W_1
+    A_2 <- A_2 <- sigmoid(Z_2 + t( B_1 %*% rep(1,120) ) )
+    Z_3 <- A_2%*%W_2
+    Y_hat <- sigmoid(Z_3 + t( B_2 %*% rep(1,120) ) )
+    numgrad_w_1[i] <- (cost(Y,Y_hat) - currentcost)/e # change in cost over perturbation = slope
+}
+numgrad_w_1
+djdw1
+
+```
+
+After performing numerical gradient checking, I feel pretty good about my derivatives.
+
+###Task 8: Gradient Descent
+```{r Gradient Descent}
+
+set.seed(1)
+W_1 <- matrix(runif(input_layer_size * hidden_layer_size)-.5, nrow = input_layer_size, ncol = hidden_layer_size)
+W_2 <- matrix(runif(hidden_layer_size * output_layer_size)-.5, nrow = hidden_layer_size, ncol = output_layer_size)
+B_1 <- matrix(runif(hidden_layer_size), ncol = 1)
+B_2 <- matrix(runif(output_layer_size), ncol = 1)
+
+# for cost tracking
+cost_hist <- rep(NA, 18000)
+
+scalar <- .2
+for(i in 1:18000){
+    # this takes the current weights and calculates y-hat
+    Z_2 <- X%*%W_1
+    A_2 <- A_2 <- sigmoid(Z_2 + t( B_1 %*% rep(1,120) ) )
+    Z_3 <- A_2%*%W_2
+    Y_hat <- sigmoid(Z_3 + t( B_2 %*% rep(1,120) ) )
+    cost_hist[i] <- cost(Y, Y_hat)
+    
+    # this part calculates the gradient at the current y-hat
+    delta_3 <- delta_3 <- ( -(Y - Y_hat) * sigmoidprime(Z_3 + t( B_2 %*% rep(1,120) ) ) )
+    djdw2 <- t(A_2) %*% delta_3
+
+    delta_2 <- delta_3 %*% t(W_2) * sigmoidprime(Z_2 + t( B_1 %*% rep(1, 120) ) )
+    djdw1 <- t(X) %*% delta_2
+
+    djdb2 <- rep(1, 120) %*% delta_3
+
+    djdb1 <- rep(1, 120) %*% delta_2
+    
+    # this updates the weights based on the gradient
+    W_1 <- W_1 - scalar * djdw1
+    W_2 <- W_2 - scalar * djdw2
+    B_1 <- B_1 - scalar * t(djdb1)
+    B_2 <- B_2 - scalar * t(djdb2)
+    
+    # repeat
+}
+
+# the results
+W_1
+W_2
+B_1
+B_2
+Y_hat
+Y
+cost(Y,Y_hat)
+plot(cost_hist, type="l") # plot the history of our cost function
+plot(log(cost_hist), type="l") # plotting the log of the cost emphasizes the change
+
+```
+
+At this point, I feel fairly confident in my model. The cost funtion shows that we have a fairly close fit and while I could continue messing with the scalar and number of training rounds, I am willing to move on and see how the model does with the training data.
+
+###Task 9: Testing our Trained Model
+
+```{r test data}
+
+
+## use test data
+
+X_test <- as.matrix(test[,1:4])
+Y_test <- as.matrix(test[,5:7])
+
+Z_2 <- X_test%*%W_1
+A_2 <- A_2 <- sigmoid(Z_2 + t( B_1 %*% rep(1,30) ) )
+Z_3 <- A_2%*%W_2
+Y_hat <- sigmoid(Z_3 + t( B_2 %*% rep(1,30) ) )
+guess <- round(Y_hat) 
+guess
+Y_test
+
+
+table(guess%*%matrix(1:3),Y_test%*%matrix(1:3))
+
+```
+
+My model guessed correctly 30/30 times as we can see by the contigency table. I could probably fiddle with the scalar and number of itterations to try and get a more optimal, less computationally heavy model that would also get a perfect prediction, but I will leave that to the black box algorithm. Interestingly, I was able to lower my cost function by adding higher number of iterations, but I did not always get perfect guesses and the computation time (several agaonizing seconds) was not worth it to me so I settled on this model.
+
+###Task 10: Black Box Code
+
+```{r black box neural network}
+set.seed(1)
+n <- dim(iris)[1]
+rows <- sample(1:n, 0.8*n)
+train <- iris[rows,]
+
+library(nnet)
+library(NeuralNetTools)
+irismodel <- nnet(Species ~ Sepal.Length + Sepal.Width + Petal.Length + Petal.Width, size=3, data = train)
+```
+
+```{r black box predictions}
+
+plotnet(irismodel, cex=.5) # a plot of our network
+
+results <- predict(irismodel, iris[-rows,])
+data.frame(round(results), actual = iris[-rows, 8])
+table(round(results)%*%matrix(1:3),Y_test%*%matrix(1:3))
+
+# we can see that the predicted probability of each class matches the actual label
+```
+
+As I suspected the black box code was able to predict the test data with 100% accuracy in an efficient manner. 
